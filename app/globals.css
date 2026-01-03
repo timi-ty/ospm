@@ -1,26 +1,399 @@
 @import "tailwindcss";
 
+/* ============================================
+   OSPM Prediction Market - Elegant Light Theme
+   Warm earth tones with soft shadows
+   ============================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Core colors */
+  --background: #F7F5F0;
+  --background-secondary: #FFFFFF;
+  --foreground: #1C1917;
+  --foreground-muted: #78716C;
+  
+  /* Accent colors */
+  --accent: #9D8B5E;
+  --accent-hover: #8A7A52;
+  
+  /* Semantic colors */
+  --yes-color: #6B8E6B;
+  --yes-hover: #5A7A5A;
+  --no-color: #B5838D;
+  --no-hover: #A07078;
+  --price-up: #6B8E6B;
+  --price-down: #B5838D;
+  
+  /* Border */
+  --border-color: #E7E5E0;
+  --border-hover: #D4D0C8;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ============================================
+   Base Styles
+   ============================================ */
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), 'DM Sans', system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* Soft mesh gradient background */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+    radial-gradient(ellipse at 20% 10%, rgba(107,142,107,0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 90%, rgba(181,131,141,0.10) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(157,139,94,0.06) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Selection style */
+::selection {
+  background: var(--accent);
+  color: white;
+}
+
+/* ============================================
+   Typography
+   ============================================ */
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+}
+
+h1 {
+  font-size: 2.5rem;
+  line-height: 1.1;
+}
+
+h2 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+h3 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+}
+
+/* Monospace for numbers */
+.font-mono {
+  font-family: var(--font-mono), 'JetBrains Mono', monospace;
+}
+
+/* ============================================
+   Card Components
+   ============================================ */
+
+.card {
+  background: var(--background-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+}
+
+.card-glow {
+  /* Legacy class - same as .card for backwards compatibility */
+}
+
+/* ============================================
+   Buttons
+   ============================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  letter-spacing: 0.01em;
+}
+
+.btn-yes {
+  background: var(--yes-color);
+  color: white;
+}
+
+.btn-yes:hover {
+  background: var(--yes-hover);
+  transform: translateY(-1px);
+}
+
+.btn-yes:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-no {
+  background: var(--no-color);
+  color: white;
+}
+
+.btn-no:hover {
+  background: var(--no-hover);
+  transform: translateY(-1px);
+}
+
+.btn-no:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--foreground);
+}
+
+.btn-outline:hover {
+  background: var(--background);
+  border-color: var(--border-hover);
+}
+
+/* ============================================
+   Input Fields
+   ============================================ */
+
+input[type="number"],
+input[type="text"] {
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+input[type="number"]:focus,
+input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(157,139,94,0.15);
+}
+
+input[type="number"]::placeholder,
+input[type="text"]::placeholder {
+  color: var(--foreground-muted);
+}
+
+/* Hide number input spinners */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ============================================
+   Probability Bar
+   ============================================ */
+
+.probability-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--border-color);
+  overflow: hidden;
+  position: relative;
+}
+
+.probability-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.5s ease;
+}
+
+.probability-bar-yes {
+  background: var(--yes-color);
+}
+
+.probability-bar-no {
+  background: var(--no-color);
+}
+
+/* ============================================
+   Price Display
+   ============================================ */
+
+.price-display {
+  font-size: 2.5rem;
+  font-weight: 700;
+  font-family: var(--font-mono), 'JetBrains Mono', monospace;
+  letter-spacing: -0.02em;
+}
+
+.price-yes {
+  color: var(--yes-color);
+}
+
+.price-no {
+  color: var(--no-color);
+}
+
+/* ============================================
+   Trade History
+   ============================================ */
+
+.trade-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem;
+  border-radius: 12px;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  transition: all 0.2s ease;
+}
+
+.trade-item:hover {
+  border-color: var(--border-hover);
+}
+
+.trade-item-yes {
+  border-left: 3px solid var(--yes-color);
+}
+
+.trade-item-no {
+  border-left: 3px solid var(--no-color);
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s ease-out forwards;
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  /* Removed glow, just subtle pulse */
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ============================================
+   Scrollbar
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+.text-muted {
+  color: var(--foreground-muted);
+}
+
+.text-accent {
+  color: var(--accent);
+}
+
+.text-yes {
+  color: var(--yes-color);
+}
+
+.text-no {
+  color: var(--no-color);
+}
+
+/* Legacy color classes for compatibility */
+.text-cyan {
+  color: var(--accent);
+}
+
+.text-magenta {
+  color: var(--no-color);
+}
+
+.text-lime {
+  color: var(--yes-color);
+}
+
+/* Gradient text - simplified for light theme */
+.gradient-text {
+  color: var(--foreground);
+  font-weight: 700;
 }

@@ -1,0 +1,37 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Market {
+  id        String   @id @default(cuid())
+  question  String
+  b         Float    // LMSR liquidity parameter
+  qYes      Float    @default(0)
+  qNo       Float    @default(0)
+  createdAt DateTime @default(now())
+  trades    Trade[]
+}
+
+model Trade {
+  id          String   @id @default(cuid())
+  marketId    String
+  market      Market   @relation(fields: [marketId], references: [id])
+  visitorId   String   // random ID from cookie, for display only
+  side        String   // "YES" or "NO"
+  amountSpent Float
+  sharesGot   Float
+  priceBefore Float
+  priceAfter  Float
+  createdAt   DateTime @default(now())
+
+  @@index([marketId])
+  @@index([createdAt])
+}
