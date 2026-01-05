@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import useSWR from "swr";
 import MarketCard from "@/components/MarketCard";
 import TradePanel from "@/components/TradePanel";
@@ -150,9 +151,15 @@ export default function Home() {
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <header className="text-center mb-10 md:mb-14">
-          <h1 className="inline-flex flex-col items-center justify-center border-[3px] border-current w-[4.5rem] h-[4.5rem] md:w-[5.5rem] md:h-[5.5rem] overflow-hidden mb-3">
-            <span className="text-[2.2rem] md:text-[2.7rem] font-black leading-[0.8] tracking-[-0.08em]">OS</span>
-            <span className="text-[2.2rem] md:text-[2.7rem] font-black leading-[0.8] tracking-[-0.08em]">PM</span>
+          <h1 className="mb-3">
+            <Image
+              src="/logo.png"
+              alt="OSPM"
+              width={100}
+              height={100}
+              className="mx-auto rounded-lg"
+              priority
+            />
           </h1>
           <p className="text-muted text-base md:text-lg max-w-xl mx-auto">
             An open-source prediction market experiment
