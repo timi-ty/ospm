@@ -167,7 +167,7 @@ export default function Home() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--yes-color)] opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--yes-color)]"></span>
             </span>
-            <span className="text-xs font-medium text-muted uppercase tracking-wider">Live Market</span>
+            <span className="text-xs font-medium text-muted uppercase tracking-wider">Play Money Only</span>
           </div>
         </div>
       </nav>
@@ -179,11 +179,19 @@ export default function Home() {
             Why This Exists
           </h2>
           <h1 className="text-2xl md:text-4xl font-medium leading-tight mb-8 text-foreground/90">
-            Prediction markets will have a <span className="text-foreground border-b-2 border-[var(--accent)]/30 pb-0.5">profound feedback effect</span> on decision making — similar to how the stock market influences public companies.
+            Prediction markets will have a <span className="text-foreground decoration-2 decoration-[var(--accent)]/30 underline underline-offset-2">profound feedback effect</span> on decision making — similar to how the stock market influences public companies.
           </h1>
           <p className="text-lg md:text-xl text-muted leading-relaxed max-w-2xl">
             Leading prediction markets must be <span className="text-[var(--accent)] font-medium">open source</span> to truly democratize the tools that shape our future decisions. This is an experiment in that transparency.
           </p>
+          <div className="mt-8 p-4 bg-[var(--accent)]/10 border border-[var(--accent)]/20 rounded-xl inline-block text-left w-full sm:w-auto">
+             <div className="flex items-start gap-3">
+               <span className="text-xl shrink-0 leading-none mt-0.5">✨</span>
+               <p className="text-sm text-[var(--foreground)] font-medium leading-snug">
+                 Use play money to test the waters. Stake as much as you want.
+               </p>
+             </div>
+          </div>
         </div>
 
         {/* Error Message */}
