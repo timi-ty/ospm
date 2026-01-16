@@ -13,10 +13,18 @@
 3. [Smart Account & Wallet Infrastructure](#section-3-smart-account--wallet-infrastructure)
 4. [Smart Contracts - Token & Core](#section-4-smart-contracts---token--core)
 5. [Smart Contracts - Market System](#section-5-smart-contracts---market-system)
+   - [Contract Upgradeability Strategy](#57-contract-upgradeability-strategy)
+   - [Data Flow & Responsibilities](#section-58-data-flow--responsibilities)
 6. [Frontend Application](#section-6-frontend-application)
 7. [Backend Services & Database](#section-7-backend-services--database)
-8. [AI Market Generation Engine](#section-8-ai-market-generation-engine)
-9. [Oracle & Settlement System](#section-9-oracle--settlement-system)
+8. [Data Service](#section-8-data-service)
+9. [Oracle Service](#section-9-oracle-service)
+   - [The Two Drivers](#92-the-two-drivers)
+   - [The Tick Mechanism](#93-the-tick-mechanism)
+   - [Data Service Client](#94-data-service-client)
+   - [Orchestrator Layer](#95-orchestrator-layer)
+   - [Server Layer](#96-server-layer)
+   - [Shared Layer](#97-shared-layer)
 10. [Gas Sponsorship & Paymaster](#section-10-gas-sponsorship--paymaster)
 
 ---
@@ -45,26 +53,53 @@ OSPM is an open-source prediction market platform that provides a seamless "Web2
 └────────────────────────────────────┼────────────────────────────────────────┘
                                      │
 ┌────────────────────────────────────┼────────────────────────────────────────┐
-│                           WALLET LAYER                                       │
+│            ospm-frontend repo (Vercel via GitHub)                           │
 │                            ┌───────▼───────┐                                │
-│                            │  Embedded EOA │                                │
-│                            │   (Signer)    │                                │
-│                            └───────┬───────┘                                │
-│                                    │                                         │
-│                            ┌───────▼───────┐                                │
-│                            │   Coinbase    │                                │
-│                            │ Smart Wallet  │                                │
+│                            │  Next.js 15   │                                │
+│                            │  (Frontend)   │                                │
 │                            └───────┬───────┘                                │
 └────────────────────────────────────┼────────────────────────────────────────┘
                                      │
 ┌────────────────────────────────────┼────────────────────────────────────────┐
-│                         EXECUTION LAYER                                      │
+│            ospm-services repo (AWS Lightsail VPS)                           │
+│                            ┌───────▼───────┐                                │
+│                            │    Oracle     │                                │
+│                            │   Service     │◄──── Market Lifecycle          │
+│                            │  (Node.js)    │      Orchestrator              │
+│                            └───────┬───────┘                                │
+│                                    │                                         │
+│         ┌──────────────────────────┼──────────────────────────┐             │
+│         │                          │                          │             │
+│         ▼                          ▼                          ▼             │
+│  ┌─────────────┐           ┌─────────────┐           ┌─────────────┐       │
+│  │    Data     │           │ PostgreSQL  │           │   Deploy    │       │
+│  │   Service   │           │     DB      │           │  to Chain   │       │
+│  │  (Python)   │           │             │           │             │       │
+│  └─────────────┘           └─────────────┘           └──────┬──────┘       │
+│   HTTP Utility                                               │              │
+│   - Scraping                                                 │              │
+│   - AI Generation                                            │              │
+│   - Outcome Verification                                     │              │
+└──────────────────────────────────────────────────────────────┼──────────────┘
+                                                               │
+┌──────────────────────────────────────────────────────────────┼──────────────┐
+│                         BLOCKCHAIN LAYER                      │              │
 │    ┌───────────────┐       ┌──────▼──────┐       ┌───────────────┐         │
-│    │  CDP Paymaster│◄──────│ Transaction │──────►│  Base Sepolia │         │
-│    │(Gas Sponsor)  │       │   Bundle    │       │   (Testnet)   │         │
-│    └───────────────┘       └─────────────┘       └───────────────┘         │
+│    │  CDP Paymaster│◄──────│  Contracts  │──────►│  Base Sepolia │         │
+│    │(Gas Sponsor)  │       │ PlayToken   │       │   (Testnet)   │         │
+│    └───────────────┘       │ Factory     │       └───────────────┘         │
+│                            │ BinaryMarket│                                  │
+│                            └─────────────┘                                  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### 1.2.1 Terminology
+
+| Term | Definition |
+|------|------------|
+| **Market** | A single binary YES/NO prediction question |
+| **Platform** | The entire OSPM system (all markets + services) |
+| **Pool** | The YES or NO betting pool within a single market |
 
 ### 1.3 Technology Stack
 
@@ -75,21 +110,25 @@ OSPM is an open-source prediction market platform that provides a seamless "Web2
 | **Auth** | Privy | Social Login, Embedded Wallets |
 | **Wallet** | Coinbase Smart Wallet | Account Abstraction |
 | **Web3** | wagmi + viem | Contract Interaction |
-| **Backend** | Node.js + Express | API Layer |
-| **Database** | PostgreSQL | Persistent Storage |
-| **AI** | Python + OpenAI | Market Generation |
+| **Oracle Service** | Node.js + TypeScript | Market lifecycle orchestrator |
+| **Data Service** | Python + FastAPI | Scraping, AI generation, outcome verification |
+| **Database** | PostgreSQL + Prisma | Persistent Storage |
 | **Contracts** | Solidity + Foundry | On-chain Logic |
 | **Network** | Base Sepolia | Testnet Deployment |
-| **Hosting (FE)** | Vercel | Frontend Deployment |
-| **Hosting (BE)** | AWS Lightsail | VPS Backend |
+| **Hosting (FE)** | Vercel | Frontend (via GitHub) |
+| **Hosting (BE)** | AWS Lightsail | VPS (Oracle, Data Service, DB) |
+| **Process Mgmt** | PM2 | Service management on VPS |
+| **Reverse Proxy** | nginx | SSL termination, routing |
 
 ### 1.4 Repository Structure
 
+The project is split into two repositories:
+
+**ospm-services** (Backend Monorepo) → AWS Lightsail VPS
+
 ```
-ospm/
-├── app/                    # Next.js App Router pages
-├── components/             # React components
-├── contracts/              # Solidity smart contracts
+ospm-services/
+├── contracts/                    # Solidity smart contracts
 │   ├── src/
 │   │   ├── PlayToken.sol
 │   │   ├── MarketFactory.sol
@@ -97,15 +136,83 @@ ospm/
 │   ├── script/
 │   ├── test/
 │   └── foundry.toml
-├── lib/                    # Shared utilities
-├── prisma/                 # Database schema
-├── server/                 # Backend API (VPS)
-│   ├── api/
-│   ├── oracle/
-│   └── scraper/
-├── ai/                     # AI market generation
-│   └── market-agent/
-└── docs/                   # Documentation
+├── oracle/                       # Node.js orchestrator service
+│   ├── src/
+│   │   ├── index.ts              # Entry point (starts both drivers)
+│   │   │
+│   │   ├── server/               # REQUEST-DRIVEN (User Input)
+│   │   │   ├── index.ts          # Express app, middleware, CORS
+│   │   │   ├── middleware/
+│   │   │   │   ├── auth.ts       # Privy JWT verification
+│   │   │   │   └── rateLimit.ts
+│   │   │   ├── auth/             # Auth domain
+│   │   │   │   ├── routes.ts
+│   │   │   │   ├── controller.ts
+│   │   │   │   └── types.ts
+│   │   │   └── markets/          # Markets domain (READ for frontend)
+│   │   │       ├── routes.ts
+│   │   │       ├── controller.ts
+│   │   │       └── service.ts    # DB queries only
+│   │   │
+│   │   ├── orchestrator/         # TIME-DRIVEN (Passage of Time)
+│   │   │   ├── index.ts          # Registers tick handlers
+│   │   │   ├── heart.ts          # Global tick mechanism (setInterval)
+│   │   │   ├── types.ts          # TickContext, TickHandler
+│   │   │   ├── dataServiceClient.ts  # HTTP client for Python service
+│   │   │   └── markets/          # Market lifecycle domain
+│   │   │       ├── creator.ts    # tick() → Data Service → deploy → store
+│   │   │       ├── monitor.ts    # tick() → check expirations
+│   │   │       └── executor.ts   # tick() → verify → settle
+│   │   │
+│   │   └── shared/               # USED BY BOTH DRIVERS
+│   │       ├── database/
+│   │       │   └── prisma.ts     # PrismaClient singleton
+│   │       ├── blockchain/
+│   │       │   ├── client.ts     # ethers.js provider, wallet
+│   │       │   └── contracts.ts  # Contract instances
+│   │       ├── notifications/
+│   │       │   └── service.ts    # Telegram/Discord
+│   │       └── config/
+│   │           └── env.ts        # Typed environment variables
+│   │
+│   ├── prisma/                   # Database schema + migrations
+│   │   ├── schema.prisma
+│   │   └── migrations/
+│   ├── package.json
+│   └── tsconfig.json
+├── data-service/                 # Python HTTP utility service
+│   ├── main.py                   # FastAPI entry point
+│   ├── scraper/                  # Data source scrapers
+│   ├── generator/                # AI market generation
+│   ├── verifier/                 # Outcome verification
+│   └── requirements.txt
+├── scripts/
+│   ├── dev-setup.sh              # Local development setup
+│   └── deploy-staging.sh         # Staging deployment (via GitHub Action)
+├── .github/
+│   └── workflows/
+│       └── deploy-staging.yml    # GitHub Action for VPS deployment
+└── env.example
+```
+
+**ospm-frontend** (Separate Repo) → Vercel via GitHub
+
+```
+ospm-frontend/
+├── app/                          # Next.js App Router pages
+│   ├── layout.tsx
+│   ├── page.tsx
+│   ├── markets/
+│   ├── dashboard/
+│   └── api/
+├── components/                   # React components
+│   ├── auth/
+│   ├── market/
+│   ├── trading/
+│   └── wallet/
+├── hooks/                        # Custom React hooks
+├── lib/                          # Shared utilities
+└── package.json
 ```
 
 ### 1.5 Environment Configuration
@@ -981,6 +1088,68 @@ Resolution Proposed ──► 2-Hour Window ──► Finalized
 - [ ] Frontend hooks for market interactions
 - [ ] One manual market deployed and resolved
 
+### 5.7 Contract Upgradeability Strategy
+
+**MVP (Testnet):** No upgradeability. Simple redeploy when changes needed.
+
+```
+Deploy V1 → Bug found → Deploy V2 → Update addresses in env
+```
+
+- Old markets remain functional at their addresses
+- New markets deploy from new factory
+- Database stores each market's individual contract address
+
+**Production (Mainnet):** Consider proxy patterns:
+
+| Contract | Pattern | Reason |
+|----------|---------|--------|
+| PlayToken | No upgrade | Simple ERC20, rarely changes |
+| MarketFactory | UUPS Proxy | May add features |
+| BinaryMarket | Beacon Proxy | All markets share implementation |
+
+**Why old markets stay functional:**
+- Factory address only used for creating NEW markets
+- Each market's `contractAddress` stored in DB
+- Oracle reads from DB, not factory
+- Funds/bets are in individual market contracts, not factory
+
+---
+
+## Section 5.8: Data Flow & Responsibilities
+
+### On-Chain vs Off-Chain Data
+
+| Data | On-Chain | Database | Why |
+|------|----------|----------|-----|
+| `question` | Yes | Yes | Chain for transparency, DB for queries |
+| `sourceUrl` | Yes | Yes | Chain for verification, DB for indexing |
+| `timestamps` | Yes | Yes | Both need scheduling info |
+| `yesPool`, `noPool` | Yes | Yes (cached) | Chain authoritative, DB for fast reads |
+| `bets` | Yes | Yes (indexed) | Chain authoritative, DB for history |
+| `category` | No | Yes | UX only, not needed on-chain |
+| `description` | No | Yes | UX only, not needed on-chain |
+| `imageUrl` | No | Yes | UX only |
+| `verificationKeywords` | No | Yes | Oracle needs for resolution |
+| `aiContext` | No | Yes | Debugging, audit trail |
+
+### Data Consistency
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SOURCE OF TRUTH                          │
+├─────────────────────────────────────────────────────────────┤
+│  CHAIN: Funds, bets, pool balances, resolution outcome      │
+│         → Trustless, anyone can verify                      │
+│                                                             │
+│  DATABASE: Market metadata, user profiles, AI context       │
+│           → Fast queries, rich data, can be rebuilt         │
+│             from chain events if needed                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**If chain and DB diverge:** Chain is authoritative for funds/bets. DB can be rebuilt by replaying chain events (indexer pattern).
+
 ---
 
 ## Section 6: Frontend Application
@@ -1419,11 +1588,32 @@ echo "Backup completed: ${FILENAME}"
 
 ---
 
-## Section 8: AI Market Generation Engine
+## Section 8: Data Service
 
 ### 8.1 Overview
 
-The AI Market Generation Engine automatically scrapes relevant data sources, generates market proposals via LLM, and deploys them to the blockchain.
+The Data Service is a Python HTTP microservice that provides scraping, AI market generation, and outcome verification capabilities. It is called by the Oracle Service (Node.js) and does NOT directly write to the database or deploy contracts—the Oracle handles all persistence and blockchain interactions.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DATA SERVICE (Python)                     │
+│                                                             │
+│  HTTP Endpoints:                                            │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ POST /generate-markets                               │   │
+│  │   → Scrapes sources, generates market proposals      │   │
+│  │   → Returns: [{question, sourceUrl, keywords, ...}]  │   │
+│  └─────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ POST /verify-outcome                                 │   │
+│  │   → Checks source URL for resolution                 │   │
+│  │   → Returns: {outcome: YES|NO|UNKNOWN, confidence}   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  Called by: Oracle Service (Node.js)                        │
+│  Does NOT: Write to DB, deploy contracts, hold keys         │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ### 8.2 Data Sources (Nigeria Focus)
 
@@ -1434,15 +1624,95 @@ The AI Market Generation Engine automatically scrapes relevant data sources, gen
 | News | Current Events | RSS feeds from major outlets |
 | CBN | Finance | https://cbn.gov.ng |
 
-### 8.3 Scraper Architecture
+### 8.3 FastAPI Application
 
 ```python
-# ai/scraper/main.py
+# data-service/main.py
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional
 import asyncio
-import aiohttp
-from bs4 import BeautifulSoup
+
+app = FastAPI(title="OSPM Data Service")
+
+class MarketProposal(BaseModel):
+    question: str
+    description: str
+    category: str
+    source_url: str
+    betting_close_offset_hours: int
+    resolution_offset_hours: int
+    verification_keywords: List[str]
+
+class GenerateMarketsRequest(BaseModel):
+    target_count: int = 5
+    categories: Optional[List[str]] = None
+
+class GenerateMarketsResponse(BaseModel):
+    proposals: List[MarketProposal]
+    scraped_count: int
+    generated_count: int
+
+class VerifyOutcomeRequest(BaseModel):
+    source_url: str
+    verification_keywords: List[str]
+    question: str
+
+class VerifyOutcomeResponse(BaseModel):
+    outcome: Optional[bool]  # True=YES, False=NO, None=UNKNOWN
+    confidence: float
+    evidence: str
+
+@app.post("/generate-markets", response_model=GenerateMarketsResponse)
+async def generate_markets(request: GenerateMarketsRequest):
+    """
+    Scrape data sources and generate market proposals.
+    Called by Oracle Service on schedule (e.g., daily at 8 AM).
+    """
+    # 1. Run scrapers
+    events = await run_all_scrapers()
+    
+    # 2. Generate proposals via AI
+    proposals = []
+    for event in events[:request.target_count * 2]:
+        proposal = await generate_market_proposal(event)
+        if proposal:
+            # 3. Validate each proposal
+            is_valid, _ = await validate_proposal(proposal)
+            if is_valid:
+                proposals.append(proposal)
+    
+    return GenerateMarketsResponse(
+        proposals=proposals[:request.target_count],
+        scraped_count=len(events),
+        generated_count=len(proposals)
+    )
+
+@app.post("/verify-outcome", response_model=VerifyOutcomeResponse)
+async def verify_outcome(request: VerifyOutcomeRequest):
+    """
+    Verify market outcome by checking source URL.
+    Called by Oracle Service when market reaches resolution time.
+    """
+    result = await fetch_and_analyze_outcome(
+        request.source_url,
+        request.verification_keywords,
+        request.question
+    )
+    return result
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+```
+
+### 8.4 Scraper Architecture
+
+```python
+# data-service/scraper/base.py
 from dataclasses import dataclass
 from typing import List
+from abc import ABC, abstractmethod
 
 @dataclass
 class ScrapedEvent:
@@ -1453,10 +1723,12 @@ class ScrapedEvent:
     category: str
     raw_data: dict
 
-class BaseScraper:
+class BaseScraper(ABC):
+    @abstractmethod
     async def scrape(self) -> List[ScrapedEvent]:
-        raise NotImplementedError
+        pass
 
+# data-service/scraper/npfl.py
 class NPFLScraper(BaseScraper):
     BASE_URL = "https://npfl.ng/fixtures"
     
@@ -1465,57 +1737,29 @@ class NPFLScraper(BaseScraper):
             async with session.get(self.BASE_URL) as response:
                 html = await response.text()
                 return self.parse_fixtures(html)
-    
-    def parse_fixtures(self, html: str) -> List[ScrapedEvent]:
-        soup = BeautifulSoup(html, 'html.parser')
-        events = []
-        
-        for fixture in soup.select('.fixture-item'):
-            events.append(ScrapedEvent(
-                title=fixture.select_one('.teams').text,
-                description=f"NPFL Match: {fixture.select_one('.teams').text}",
-                source_url=f"{self.BASE_URL}/{fixture['data-id']}",
-                event_date=fixture.select_one('.date').text,
-                category="sports",
-                raw_data={}
-            ))
-        
-        return events
 
-async def run_all_scrapers():
-    scrapers = [
-        NPFLScraper(),
-        NBSScraper(),
-        NewsScraper(),
-    ]
-    
+# data-service/scraper/__init__.py
+async def run_all_scrapers() -> List[ScrapedEvent]:
+    scrapers = [NPFLScraper(), NBSScraper(), NewsScraper()]
     all_events = []
     for scraper in scrapers:
         try:
             events = await scraper.scrape()
             all_events.extend(events)
         except Exception as e:
-            logger.error(f"Scraper failed: {e}")
-    
+            logger.error(f"Scraper {scraper.__class__.__name__} failed: {e}")
     return all_events
 ```
 
-### 8.4 AI Agent (Market Generator)
+### 8.5 AI Market Generator
 
 ```python
-# ai/agent/market_generator.py
+# data-service/generator/market_generator.py
 import openai
-from typing import List, Optional
-from pydantic import BaseModel
-
-class MarketProposal(BaseModel):
-    question: str
-    description: str
-    category: str
-    source_url: str
-    betting_close_offset_hours: int
-    resolution_offset_hours: int
-    verification_keywords: List[str]
+import json
+from typing import Optional
+from ..scraper import ScrapedEvent
+from ..main import MarketProposal
 
 SYSTEM_PROMPT = """You are a prediction market creator for OSPM.
 Generate binary YES/NO market questions from news events.
@@ -1539,7 +1783,7 @@ Output JSON format:
 }
 """
 
-async def generate_market(event: ScrapedEvent) -> Optional[MarketProposal]:
+async def generate_market_proposal(event: ScrapedEvent) -> Optional[MarketProposal]:
     client = openai.AsyncOpenAI()
     
     response = await client.chat.completions.create(
@@ -1568,22 +1812,21 @@ async def generate_market(event: ScrapedEvent) -> Optional[MarketProposal]:
         return None
 ```
 
-### 8.5 Sanity Check (Pre-deployment Validation)
+### 8.6 Proposal Validation
 
 ```python
-# ai/agent/validator.py
+# data-service/generator/validator.py
 import aiohttp
 from typing import Tuple
+from ..main import MarketProposal
 
-async def validate_market(proposal: MarketProposal) -> Tuple[bool, str]:
+async def validate_proposal(proposal: MarketProposal) -> Tuple[bool, str]:
     """
-    Validate market before deployment:
+    Validate market proposal before returning to Oracle:
     1. Source URL returns 200 OK
     2. Page contains verification keywords
     3. Timeframes are reasonable
     """
-    
-    # Check source URL
     async with aiohttp.ClientSession() as session:
         try:
             async with session.get(proposal.source_url, timeout=10) as response:
@@ -1591,8 +1834,6 @@ async def validate_market(proposal: MarketProposal) -> Tuple[bool, str]:
                     return False, f"Source URL returned {response.status}"
                 
                 html = await response.text()
-                
-                # Check for keywords
                 found_keywords = sum(
                     1 for kw in proposal.verification_keywords 
                     if kw.lower() in html.lower()
@@ -1604,7 +1845,6 @@ async def validate_market(proposal: MarketProposal) -> Tuple[bool, str]:
         except Exception as e:
             return False, f"Failed to fetch source: {e}"
     
-    # Validate timeframes
     if proposal.betting_close_offset_hours < 1:
         return False, "Betting close too soon"
     
@@ -1614,317 +1854,525 @@ async def validate_market(proposal: MarketProposal) -> Tuple[bool, str]:
     return True, "Validation passed"
 ```
 
-### 8.6 Deployment Worker
-
-```typescript
-// server/workers/deployMarket.ts
-import { ethers } from 'ethers';
-import { prisma } from '../lib/prisma';
-
-const MARKET_FACTORY_ABI = [...];
-
-export async function deployMarket(proposal: MarketProposal) {
-  const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-  const wallet = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!, provider);
-  
-  const factory = new ethers.Contract(
-    process.env.MARKET_FACTORY_ADDRESS!,
-    MARKET_FACTORY_ABI,
-    wallet
-  );
-
-  const bettingCloseTimestamp = Math.floor(Date.now() / 1000) + 
-    (proposal.betting_close_offset_hours * 3600);
-  
-  const resolutionTimestamp = Math.floor(Date.now() / 1000) + 
-    (proposal.resolution_offset_hours * 3600);
-
-  const tx = await factory.createMarket(
-    proposal.question,
-    proposal.source_url,
-    bettingCloseTimestamp,
-    resolutionTimestamp
-  );
-
-  const receipt = await tx.wait();
-  const marketAddress = receipt.logs[0].args.market;
-
-  // Save to database
-  await prisma.market.create({
-    data: {
-      contractAddress: marketAddress,
-      question: proposal.question,
-      description: proposal.description,
-      category: proposal.category,
-      sourceUrl: proposal.source_url,
-      bettingCloseTimestamp: new Date(bettingCloseTimestamp * 1000),
-      resolutionTimestamp: new Date(resolutionTimestamp * 1000),
-      status: 'DEPLOYED',
-      deployedAt: new Date(),
-    },
-  });
-
-  return marketAddress;
-}
-```
-
-### 8.7 Daily Generation Pipeline
+### 8.7 Outcome Verification
 
 ```python
-# ai/pipeline/daily_markets.py
-import asyncio
-from datetime import datetime
+# data-service/verifier/outcome_verifier.py
+import aiohttp
+from typing import Optional
+from ..main import VerifyOutcomeResponse
 
-async def generate_daily_markets(target_count: int = 5):
-    """Generate up to 5 markets per day"""
-    
-    # 1. Scrape all sources
-    events = await run_all_scrapers()
-    logger.info(f"Scraped {len(events)} events")
-    
-    # 2. Generate market proposals
-    proposals = []
-    for event in events[:target_count * 2]:  # Get extras for validation failures
-        proposal = await generate_market(event)
-        if proposal:
-            proposals.append(proposal)
-    
-    # 3. Validate proposals
-    valid_proposals = []
-    for proposal in proposals:
-        is_valid, reason = await validate_market(proposal)
-        if is_valid:
-            valid_proposals.append(proposal)
-        else:
-            logger.warning(f"Rejected: {proposal.question} - {reason}")
-    
-    # 4. Deploy markets (up to target_count)
-    deployed = 0
-    for proposal in valid_proposals[:target_count]:
-        try:
-            address = await deploy_market(proposal)
-            logger.info(f"Deployed market: {address}")
-            deployed += 1
-        except Exception as e:
-            logger.error(f"Deployment failed: {e}")
-    
-    return deployed
-
-if __name__ == "__main__":
-    asyncio.run(generate_daily_markets())
+async def fetch_and_analyze_outcome(
+    source_url: str,
+    verification_keywords: list[str],
+    question: str
+) -> VerifyOutcomeResponse:
+    """
+    Fetch source URL and analyze for market outcome.
+    Uses keyword matching and sentiment analysis.
+    """
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(source_url, timeout=10) as response:
+                if response.status != 200:
+                    return VerifyOutcomeResponse(
+                        outcome=None,
+                        confidence=0,
+                        evidence=f"Source returned {response.status}"
+                    )
+                
+                html = await response.text()
+                text = html.lower()
+                
+                # Check keyword presence
+                keyword_matches = sum(
+                    1 for kw in verification_keywords 
+                    if kw.lower() in text
+                )
+                keyword_confidence = keyword_matches / len(verification_keywords)
+                
+                if keyword_confidence < 0.5:
+                    return VerifyOutcomeResponse(
+                        outcome=None,
+                        confidence=0,
+                        evidence="Insufficient keyword matches"
+                    )
+                
+                # Analyze for outcome indicators
+                positive = ['won', 'passed', 'approved', 'yes', 'confirmed', 'victory']
+                negative = ['lost', 'failed', 'rejected', 'no', 'denied', 'defeat']
+                
+                pos_count = sum(1 for p in positive if p in text)
+                neg_count = sum(1 for n in negative if n in text)
+                
+                if pos_count > neg_count:
+                    outcome = True
+                elif neg_count > pos_count:
+                    outcome = False
+                else:
+                    outcome = None
+                
+                confidence = abs(pos_count - neg_count) / (pos_count + neg_count + 1)
+                
+                return VerifyOutcomeResponse(
+                    outcome=outcome,
+                    confidence=confidence,
+                    evidence=f"Found {pos_count} positive, {neg_count} negative indicators"
+                )
+                
+    except Exception as e:
+        return VerifyOutcomeResponse(
+            outcome=None,
+            confidence=0,
+            evidence=f"Error: {str(e)}"
+        )
 ```
+
+> **Note:** Market deployment and daily scheduling are handled by the Oracle Service (Section 9), not the Data Service. The Data Service is a stateless HTTP utility.
 
 ### 8.8 Deliverables Checklist
 
-- [ ] Scraper implementations for 3+ sources
+- [ ] FastAPI application with `/generate-markets` endpoint
+- [ ] FastAPI application with `/verify-outcome` endpoint
+- [ ] Scraper implementations for 3+ sources (NPFL, NBS, News RSS)
 - [ ] OpenAI integration for market generation
-- [ ] Sanity check validator (URL + keywords)
-- [ ] Market deployment worker (Node.js)
-- [ ] Daily pipeline script
-- [ ] Cron job for automated generation
-- [ ] AI logging to database
-- [ ] Error handling and retry logic
-- [ ] 5 markets/day generation target
+- [ ] Proposal validation (URL + keywords)
+- [ ] Outcome verification logic
+- [ ] Health check endpoint
+- [ ] Error handling and logging
+- [ ] Unit tests for scrapers and generators
+- [ ] Service running on VPS via PM2
 
 ---
 
-## Section 9: Oracle & Settlement System
+## Section 9: Oracle Service
 
 ### 9.1 Overview
 
-The Oracle Gateway is a secure Node.js service that monitors markets for expiration and triggers settlement. It holds the admin/oracle private key and is the only entity authorized to resolve markets.
+The Oracle Service is the central orchestrator for the entire market lifecycle. It is a Node.js/TypeScript service organized around **two fundamental drivers**:
 
-### 9.2 Oracle Architecture
+| Driver | Trigger | Folder | Purpose |
+|--------|---------|--------|---------|
+| **User Input** | HTTP requests | `server/` | Respond to frontend API calls |
+| **Passage of Time** | setInterval tick | `orchestrator/` | Background market lifecycle |
+
+**Key Responsibilities:**
+
+1. **Server (User Input)**: REST API for frontend—fetch markets, authenticate users, read bet history
+2. **Orchestrator (Passage of Time)**: Market creation, expiration monitoring, outcome verification, settlement
+
+**Architectural Rules:**
+
+- `server/` never depends on `orchestrator/` (stateless, could be serverless)
+- `orchestrator/` never exposes HTTP endpoints (background processing only)
+- `shared/` contains only code used by BOTH drivers
+- Only the orchestrator calls the Data Service (Python)
+
+The Oracle holds the admin/oracle private key and is the only entity authorized to deploy and resolve markets.
+
+### 9.2 The Two Drivers
+
+The Oracle's internal architecture separates concerns by **what triggers execution**:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    ORACLE GATEWAY (VPS)                     │
-│                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
-│  │   Market    │    │   Result    │    │  Settlement │    │
-│  │   Monitor   │───►│   Fetcher   │───►│   Executor  │    │
-│  └─────────────┘    └─────────────┘    └─────────────┘    │
-│         │                   │                   │          │
-│         ▼                   ▼                   ▼          │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │                   PostgreSQL DB                      │  │
-│  │  (Market status, resolution proposals, disputes)     │  │
-│  └─────────────────────────────────────────────────────┘  │
-│                           │                                │
-│                           ▼                                │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │              Oracle Private Key (Secure)             │  │
-│  └─────────────────────────────────────────────────────┘  │
-│                           │                                │
-└───────────────────────────┼────────────────────────────────┘
-                            │
-                            ▼
-                    ┌───────────────┐
-                    │  Base Sepolia │
-                    │  (Blockchain) │
-                    └───────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ORACLE SERVICE (Node.js)                             │
+│                                                                             │
+│  ┌─────────────────────────────────┐  ┌─────────────────────────────────┐  │
+│  │         SERVER (User Input)     │  │    ORCHESTRATOR (Passage of Time)│  │
+│  │                                 │  │                                 │  │
+│  │  Trigger: HTTP Request          │  │  Trigger: setInterval tick      │  │
+│  │  State: Stateless               │  │  State: Stateful (lastTickedAt) │  │
+│  │  Could be: Serverless           │  │  Must be: Persistent process    │  │
+│  │                                 │  │                                 │  │
+│  │  ┌───────────────────────────┐  │  │  ┌───────────────────────────┐  │  │
+│  │  │ GET /api/markets          │  │  │  │ heart.ts (global tick)    │  │  │
+│  │  │ GET /api/markets/:id      │  │  │  │     │                     │  │  │
+│  │  │ POST /api/auth/verify     │  │  │  │     ├─► creator.tick()    │  │  │
+│  │  │ GET /api/users/:id/bets   │  │  │  │     ├─► monitor.tick()    │  │  │
+│  │  └───────────────────────────┘  │  │  │     └─► executor.tick()   │  │  │
+│  │              │                  │  │  └───────────────────────────┘  │  │
+│  │              │                  │  │              │                  │  │
+│  │              │                  │  │              │ HTTP             │  │
+│  │              │                  │  │              ▼                  │  │
+│  │              │                  │  │  ┌───────────────────────────┐  │  │
+│  │              │                  │  │  │   dataServiceClient.ts    │  │  │
+│  │              │                  │  │  │   (Bridge to Python)      │  │  │
+│  │              │                  │  │  └───────────────────────────┘  │  │
+│  │              │                  │  │              │                  │  │
+│  └──────────────┼──────────────────┘  └──────────────┼──────────────────┘  │
+│                 │                                    │                     │
+│                 └────────────────┬───────────────────┘                     │
+│                                  ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │                           SHARED                                     │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │  │
+│  │  │  database/  │  │ blockchain/ │  │notifications│  │   config/   │ │  │
+│  │  │  prisma.ts  │  │  client.ts  │  │  service.ts │  │    env.ts   │ │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘ │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                  │
+                    ┌─────────────┼─────────────┐
+                    ▼             ▼             ▼
+             ┌───────────┐ ┌───────────┐ ┌───────────┐
+             │ PostgreSQL│ │   Data    │ │   Base    │
+             │    DB     │ │  Service  │ │  Sepolia  │
+             └───────────┘ │ (Python)  │ └───────────┘
+                           └───────────┘
 ```
 
-### 9.3 Market Monitor Service
+### 9.3 The Tick Mechanism
+
+The orchestrator uses a centralized "heartbeat" pattern where a single `setInterval` drives all background operations:
 
 ```typescript
-// server/oracle/monitor.ts
-import { ethers } from 'ethers';
-import { prisma } from '../lib/prisma';
-import { notifyAdmin } from './notifications';
+// oracle/src/orchestrator/heart.ts
 
-const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
+import type { TickContext, TickHandler } from './types';
 
-export class MarketMonitor {
-  private provider: ethers.JsonRpcProvider;
-  
-  constructor() {
-    this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+class Heart {
+  private intervalId: NodeJS.Timeout | null = null;
+  private handlers: Map<string, TickHandler> = new Map();
+  private tickCount = 0;
+
+  register(name: string, handler: TickHandler) {
+    this.handlers.set(name, handler);
   }
 
-  async start() {
-    console.log('Oracle Market Monitor started');
+  start(intervalMs: number = 60_000) {
+    console.log(`Heart starting with ${intervalMs}ms interval`);
     
-    setInterval(async () => {
-      await this.checkExpiredMarkets();
-      await this.checkProposedMarkets();
-    }, CHECK_INTERVAL);
+    this.intervalId = setInterval(async () => {
+      this.tickCount++;
+      const context: TickContext = {
+        tickCount: this.tickCount,
+        tickTime: new Date(),
+        intervalMs,
+      };
+
+      for (const [name, handler] of this.handlers) {
+        try {
+          await handler.tick(context);
+        } catch (error) {
+          console.error(`Tick handler "${name}" failed:`, error);
+          // Error isolated - other handlers continue
+        }
+      }
+    }, intervalMs);
   }
 
-  async checkExpiredMarkets() {
+  stop() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+}
+
+export const heart = new Heart();
+```
+
+```typescript
+// oracle/src/orchestrator/types.ts
+
+export interface TickContext {
+  tickCount: number;
+  tickTime: Date;
+  intervalMs: number;
+}
+
+export interface TickHandler {
+  tick(context: TickContext): Promise<void>;
+}
+
+// Utility for components to control their own cadence
+export function shouldTick(
+  lastTickedAt: Date | null,
+  tickEveryMs: number,
+  currentTime: Date
+): boolean {
+  if (!lastTickedAt) return true;  // Never ticked, should tick now
+  const elapsed = currentTime.getTime() - lastTickedAt.getTime();
+  return elapsed >= tickEveryMs;
+}
+```
+
+**Key Design Decisions:**
+
+| Decision | Rationale |
+|----------|-----------|
+| Single global interval | Simpler than multiple setIntervals, easier to debug |
+| Per-handler try/catch | One failure doesn't stop the heart |
+| `shouldTick()` utility | Components control their own cadence (e.g., creator: 24h, monitor: 5m) |
+| Handlers registered at startup | Clear dependency injection |
+
+```typescript
+// oracle/src/orchestrator/index.ts
+
+import { heart } from './heart';
+import { marketCreator } from './markets/creator';
+import { marketMonitor } from './markets/monitor';
+
+export function startOrchestrator(intervalMs: number = 60_000) {
+  // Register all tick handlers
+  heart.register('marketCreator', marketCreator);
+  heart.register('marketMonitor', marketMonitor);
+  
+  // Start the heartbeat
+  heart.start(intervalMs);
+}
+
+export { heart };
+```
+
+### 9.4 Data Service Client
+
+The Data Service Client is the **bridge** between the Oracle (Node.js) and the Data Service (Python). It lives in `orchestrator/` because only time-driven processes call the Python service.
+
+```typescript
+// oracle/src/orchestrator/dataServiceClient.ts
+
+const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL || 'http://localhost:8000';
+
+interface MarketProposal {
+  question: string;
+  description: string;
+  category: string;
+  source_url: string;
+  betting_close_offset_hours: number;
+  resolution_offset_hours: number;
+  verification_keywords: string[];
+}
+
+interface GenerateMarketsResponse {
+  proposals: MarketProposal[];
+  scraped_count: number;
+  generated_count: number;
+}
+
+interface VerifyOutcomeRequest {
+  source_url: string;
+  verification_keywords: string[];
+  question: string;
+}
+
+interface VerifyOutcomeResponse {
+  outcome: boolean | null;  // true=YES, false=NO, null=UNKNOWN
+  confidence: number;
+  evidence: string;
+}
+
+export const dataServiceClient = {
+  async generateMarkets(targetCount: number = 5): Promise<GenerateMarketsResponse> {
+    const response = await fetch(`${DATA_SERVICE_URL}/generate-markets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_count: targetCount }),
+    });
+    if (!response.ok) throw new Error(`Data Service error: ${response.status}`);
+    return response.json();
+  },
+
+  async verifyOutcome(request: VerifyOutcomeRequest): Promise<VerifyOutcomeResponse> {
+    const response = await fetch(`${DATA_SERVICE_URL}/verify-outcome`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) throw new Error(`Data Service error: ${response.status}`);
+    return response.json();
+  },
+
+  async healthCheck(): Promise<boolean> {
+    try {
+      const response = await fetch(`${DATA_SERVICE_URL}/health`);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  },
+};
+```
+
+**HTTP Contract with Python Data Service:**
+
+| Endpoint | Called By | Purpose |
+|----------|-----------|---------|
+| `POST /generate-markets` | `orchestrator/markets/creator.ts` | Scrape + AI → market proposals |
+| `POST /verify-outcome` | `orchestrator/markets/monitor.ts` | Check source for resolution |
+| `GET /health` | Deployment scripts, heart.ts | Health check |
+
+### 9.5 Orchestrator Layer
+
+The orchestrator layer handles all time-driven operations. Each component implements `TickHandler` and controls its own cadence via `shouldTick()`.
+
+#### 9.5.1 Market Creator
+
+```typescript
+// oracle/src/orchestrator/markets/creator.ts
+
+import { shouldTick, type TickContext, type TickHandler } from '../types';
+import { dataServiceClient } from '../dataServiceClient';
+import { prisma } from '../../shared/database/prisma';
+import { deployMarket } from '../../shared/blockchain/contracts';
+
+const TICK_EVERY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+class MarketCreator implements TickHandler {
+  private lastTickedAt: Date | null = null;
+
+  async tick(context: TickContext): Promise<void> {
+    if (!shouldTick(this.lastTickedAt, TICK_EVERY_MS, context.tickTime)) return;
+    
+    console.log(`[MarketCreator] Running at tick ${context.tickCount}`);
+    this.lastTickedAt = context.tickTime;
+
+    // 1. Call Data Service for proposals
+    const { proposals } = await dataServiceClient.generateMarkets(5);
+    console.log(`Received ${proposals.length} market proposals`);
+
+    // 2. Deploy each to chain and store in DB
+    for (const proposal of proposals) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const bettingClose = now + (proposal.betting_close_offset_hours * 3600);
+        const resolution = now + (proposal.resolution_offset_hours * 3600);
+
+        const address = await deployMarket(
+          proposal.question,
+          proposal.source_url,
+          bettingClose,
+          resolution
+        );
+
+        await prisma.market.create({
+          data: {
+            contractAddress: address,
+            question: proposal.question,
+            description: proposal.description,
+            category: proposal.category,
+            sourceUrl: proposal.source_url,
+            bettingCloseTimestamp: new Date(bettingClose * 1000),
+            resolutionTimestamp: new Date(resolution * 1000),
+            verificationKeywords: proposal.verification_keywords,
+            status: 'OPEN',
+            deployedAt: new Date(),
+          },
+        });
+
+        console.log(`Deployed market: ${address}`);
+      } catch (error) {
+        console.error(`Failed to deploy: ${proposal.question}`, error);
+      }
+    }
+  }
+}
+
+export const marketCreator = new MarketCreator();
+```
+
+#### 9.5.2 Market Monitor
+
+```typescript
+// oracle/src/orchestrator/markets/monitor.ts
+
+import { shouldTick, type TickContext, type TickHandler } from '../types';
+import { dataServiceClient } from '../dataServiceClient';
+import { prisma } from '../../shared/database/prisma';
+import { notifyAdmin } from '../../shared/notifications/service';
+import { marketExecutor } from './executor';
+
+const TICK_EVERY_MS = 5 * 60 * 1000; // 5 minutes
+
+class MarketMonitor implements TickHandler {
+  private lastTickedAt: Date | null = null;
+
+  async tick(context: TickContext): Promise<void> {
+    if (!shouldTick(this.lastTickedAt, TICK_EVERY_MS, context.tickTime)) return;
+    
+    console.log(`[MarketMonitor] Running at tick ${context.tickCount}`);
+    this.lastTickedAt = context.tickTime;
+
+    await this.checkExpiredMarkets();
+    await this.checkProposedMarkets();
+  }
+
+  private async checkExpiredMarkets() {
     const expiredMarkets = await prisma.market.findMany({
       where: {
-        status: { in: ['DEPLOYED', 'OPEN', 'CLOSED'] },
+        status: { in: ['OPEN', 'CLOSED'] },
         resolutionTimestamp: { lte: new Date() },
       },
     });
 
     for (const market of expiredMarkets) {
       console.log(`Market ready for resolution: ${market.id}`);
-      await this.queueForResolution(market);
+      await this.resolveMarket(market);
     }
   }
 
-  async checkProposedMarkets() {
+  private async resolveMarket(market: any) {
+    try {
+      // Call Data Service to verify outcome
+      const { outcome, confidence, evidence } = await dataServiceClient.verifyOutcome({
+        source_url: market.sourceUrl,
+        verification_keywords: market.verificationKeywords,
+        question: market.question,
+      });
+
+      if (outcome !== null && confidence >= 0.5) {
+        await marketExecutor.proposeResolution(market.contractAddress, outcome);
+        console.log(`Proposed resolution for ${market.id}: ${outcome ? 'YES' : 'NO'}`);
+      } else {
+        await prisma.market.update({
+          where: { id: market.id },
+          data: { status: 'PENDING_RESOLUTION' },
+        });
+        await notifyAdmin(
+          `Market needs manual resolution: ${market.question}\nEvidence: ${evidence}`
+        );
+      }
+    } catch (error) {
+      console.error(`Failed to resolve market ${market.id}:`, error);
+      await notifyAdmin(`Resolution failed for market: ${market.question}`);
+    }
+  }
+
+  private async checkProposedMarkets() {
     const proposedMarkets = await prisma.market.findMany({
-      where: {
-        status: 'PROPOSED',
-      },
+      where: { status: 'PROPOSED' },
     });
 
     for (const market of proposedMarkets) {
-      const contract = new ethers.Contract(
-        market.contractAddress,
-        BINARY_MARKET_ABI,
-        this.provider
-      );
-      
-      const proposedTimestamp = await contract.proposedTimestamp();
-      const disputeWindow = await contract.DISPUTE_WINDOW();
-      const canFinalize = Date.now() / 1000 >= proposedTimestamp + disputeWindow;
+      const canFinalize = await marketExecutor.canFinalize(market.contractAddress);
       
       if (canFinalize) {
-        await this.finalizeResolution(market);
+        await marketExecutor.finalizeResolution(market.contractAddress);
+        console.log(`Finalized resolution for ${market.id}`);
       }
     }
   }
-
-  async queueForResolution(market: Market) {
-    // Add to resolution queue for manual or automatic resolution
-    await prisma.market.update({
-      where: { id: market.id },
-      data: { status: 'PENDING_RESOLUTION' },
-    });
-    
-    await notifyAdmin(`Market ready for resolution: ${market.question}`);
-  }
 }
+
+export const marketMonitor = new MarketMonitor();
 ```
 
-### 9.4 Result Fetcher
+> **Note:** The monitor calls `dataServiceClient.verifyOutcome()` to leverage the Python service's AI capabilities for outcome verification.
+
+#### 9.5.3 Market Executor
 
 ```typescript
-// server/oracle/resultFetcher.ts
-import axios from 'axios';
-import * as cheerio from 'cheerio';
+// oracle/src/orchestrator/markets/executor.ts
 
-export async function fetchResult(
-  sourceUrl: string,
-  verificationKeywords: string[]
-): Promise<{ outcome: boolean | null; confidence: number; evidence: string }> {
-  try {
-    const response = await axios.get(sourceUrl, { timeout: 10000 });
-    const html = response.data;
-    const $ = cheerio.load(html);
-    
-    // Extract text content
-    const text = $('body').text().toLowerCase();
-    
-    // Check for outcome indicators
-    const positiveIndicators = ['won', 'passed', 'approved', 'yes', 'confirmed'];
-    const negativeIndicators = ['lost', 'failed', 'rejected', 'no', 'denied'];
-    
-    let positiveCount = 0;
-    let negativeCount = 0;
-    
-    for (const indicator of positiveIndicators) {
-      if (text.includes(indicator)) positiveCount++;
-    }
-    
-    for (const indicator of negativeIndicators) {
-      if (text.includes(indicator)) negativeCount++;
-    }
-    
-    // Check keyword presence
-    const keywordMatches = verificationKeywords.filter(kw => 
-      text.includes(kw.toLowerCase())
-    ).length;
-    
-    const keywordConfidence = keywordMatches / verificationKeywords.length;
-    
-    if (keywordConfidence < 0.5) {
-      return { outcome: null, confidence: 0, evidence: 'Insufficient keyword matches' };
-    }
-    
-    const outcome = positiveCount > negativeCount ? true : 
-                   negativeCount > positiveCount ? false : null;
-    
-    const confidence = Math.abs(positiveCount - negativeCount) / 
-                      (positiveCount + negativeCount + 1);
-    
-    return {
-      outcome,
-      confidence,
-      evidence: `Found ${positiveCount} positive, ${negativeCount} negative indicators`,
-    };
-  } catch (error) {
-    return { outcome: null, confidence: 0, evidence: `Fetch error: ${error}` };
-  }
-}
-```
-
-### 9.5 Settlement Executor
-
-```typescript
-// server/oracle/executor.ts
 import { ethers } from 'ethers';
-import { prisma } from '../lib/prisma';
-import { notifyAdmin } from './notifications';
+import { prisma } from '../../shared/database/prisma';
+import { getMarketContract } from '../../shared/blockchain/contracts';
+import { notifyAdmin } from '../../shared/notifications/service';
 
-export class SettlementExecutor {
-  private wallet: ethers.Wallet;
-  
-  constructor() {
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-    this.wallet = new ethers.Wallet(process.env.ORACLE_PRIVATE_KEY!, provider);
-  }
-
+class MarketExecutor {
   async proposeResolution(marketAddress: string, outcome: boolean) {
-    const contract = new ethers.Contract(
-      marketAddress,
-      BINARY_MARKET_ABI,
-      this.wallet
-    );
+    const contract = getMarketContract(marketAddress);
 
     const tx = await contract.proposeResolution(outcome);
     const receipt = await tx.wait();
@@ -1944,12 +2392,15 @@ export class SettlementExecutor {
     return receipt;
   }
 
+  async canFinalize(marketAddress: string): Promise<boolean> {
+    const contract = getMarketContract(marketAddress);
+    const proposedTimestamp = await contract.proposedTimestamp();
+    const disputeWindow = await contract.DISPUTE_WINDOW();
+    return Date.now() / 1000 >= Number(proposedTimestamp) + Number(disputeWindow);
+  }
+
   async finalizeResolution(marketAddress: string) {
-    const contract = new ethers.Contract(
-      marketAddress,
-      BINARY_MARKET_ABI,
-      this.wallet
-    );
+    const contract = getMarketContract(marketAddress);
 
     const tx = await contract.finalizeResolution();
     const receipt = await tx.wait();
@@ -1965,14 +2416,17 @@ export class SettlementExecutor {
     return receipt;
   }
 }
+
+export const marketExecutor = new MarketExecutor();
 ```
 
-### 9.6 Dispute Handler
+#### 9.5.4 Dispute Handler
 
 ```typescript
-// server/oracle/disputes.ts
-import { prisma } from '../lib/prisma';
-import { notifyAdmin } from './notifications';
+// oracle/src/orchestrator/markets/disputes.ts
+
+import { prisma } from '../../shared/database/prisma';
+import { notifyAdmin } from '../../shared/notifications/service';
 
 export async function handleDispute(
   marketAddress: string,
@@ -1984,7 +2438,6 @@ export async function handleDispute(
     data: { status: 'DISPUTED' },
   });
 
-  // Notify admin via Telegram/Discord
   await notifyAdmin(`
     🚨 MARKET DISPUTED 🚨
     
@@ -1995,7 +2448,6 @@ export async function handleDispute(
     Action required: Manual review
   `);
 
-  // Create dispute record
   await prisma.dispute.create({
     data: {
       marketAddress,
@@ -2007,64 +2459,229 @@ export async function handleDispute(
 }
 ```
 
-### 9.7 Admin Dashboard API
+### 9.6 Server Layer
+
+The server layer handles all request-driven operations. It is stateless and could theoretically be deployed as serverless functions.
+
+#### 9.6.1 Express App Setup
 
 ```typescript
-// server/api/admin.ts
+// oracle/src/server/index.ts
+
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { authMiddleware } from './middleware/auth';
+import { authRouter } from './auth/routes';
+import { marketsRouter } from './markets/routes';
+
+const app = express();
+
+// Security middleware
+app.use(helmet());
+app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+app.use(express.json());
+
+// Rate limiting
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
+app.use(limiter);
+
+// Public routes
+app.use('/api/auth', authRouter);
+app.use('/api/markets', marketsRouter);
+
+// Health check
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+export { app };
+```
+
+#### 9.6.2 Auth Domain
+
+```typescript
+// oracle/src/server/auth/routes.ts
+
 import { Router } from 'express';
-import { SettlementExecutor } from '../oracle/executor';
+import { verifyPrivyToken } from './controller';
 
 const router = Router();
-const executor = new SettlementExecutor();
 
-// List markets pending resolution
-router.get('/pending', async (req, res) => {
-  const markets = await prisma.market.findMany({
-    where: { status: 'PENDING_RESOLUTION' },
-    orderBy: { resolutionTimestamp: 'asc' },
+router.post('/verify', async (req, res) => {
+  const { token } = req.body;
+  
+  try {
+    const user = await verifyPrivyToken(token);
+    res.json({ success: true, user });
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+export { router as authRouter };
+```
+
+#### 9.6.3 Markets Domain
+
+```typescript
+// oracle/src/server/markets/routes.ts
+
+import { Router } from 'express';
+import { getMarkets, getMarketById, getUserBets } from './service';
+
+const router = Router();
+
+// List all markets with filters
+router.get('/', async (req, res) => {
+  const { status, category, limit = 20, offset = 0 } = req.query;
+  
+  const markets = await getMarkets({
+    status: status as string,
+    category: category as string,
+    limit: Number(limit),
+    offset: Number(offset),
   });
+  
   res.json(markets);
 });
 
-// Manually propose resolution
-router.post('/propose', async (req, res) => {
-  const { marketAddress, outcome } = req.body;
+// Get single market by address
+router.get('/:address', async (req, res) => {
+  const market = await getMarketById(req.params.address);
   
-  try {
-    const receipt = await executor.proposeResolution(marketAddress, outcome);
-    res.json({ success: true, txHash: receipt.hash });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  if (!market) {
+    return res.status(404).json({ error: 'Market not found' });
   }
-});
-
-// Manually finalize resolution
-router.post('/finalize', async (req, res) => {
-  const { marketAddress } = req.body;
   
-  try {
-    const receipt = await executor.finalizeResolution(marketAddress);
-    res.json({ success: true, txHash: receipt.hash });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  res.json(market);
 });
 
-// Review dispute
-router.post('/disputes/:id/review', async (req, res) => {
-  const { id } = req.params;
-  const { resolution, override_outcome } = req.body;
-  
-  // Handle dispute resolution...
+// Get user's bet history
+router.get('/users/:address/bets', async (req, res) => {
+  const bets = await getUserBets(req.params.address);
+  res.json(bets);
 });
 
-export default router;
+export { router as marketsRouter };
 ```
 
-### 9.8 Notification Service
+```typescript
+// oracle/src/server/markets/service.ts
+
+import { prisma } from '../../shared/database/prisma';
+
+interface GetMarketsParams {
+  status?: string;
+  category?: string;
+  limit: number;
+  offset: number;
+}
+
+export async function getMarkets(params: GetMarketsParams) {
+  const { status, category, limit, offset } = params;
+  
+  return prisma.market.findMany({
+    where: {
+      ...(status && { status }),
+      ...(category && { category }),
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    skip: offset,
+  });
+}
+
+export async function getMarketById(address: string) {
+  return prisma.market.findUnique({
+    where: { contractAddress: address },
+  });
+}
+
+export async function getUserBets(userAddress: string) {
+  return prisma.bet.findMany({
+    where: { user: { address: userAddress } },
+    include: { market: true },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+```
+
+### 9.7 Shared Layer
+
+The shared layer contains code used by both the server and orchestrator.
+
+#### 9.7.1 Database (Prisma)
 
 ```typescript
-// server/oracle/notifications.ts
+// oracle/src/shared/database/prisma.ts
+
+import { PrismaClient } from '@prisma/client';
+
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+
+export const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['query'] : [],
+  });
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+```
+
+#### 9.7.2 Blockchain Client
+
+```typescript
+// oracle/src/shared/blockchain/client.ts
+
+import { ethers } from 'ethers';
+
+export const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+export const oracleWallet = new ethers.Wallet(
+  process.env.ORACLE_PRIVATE_KEY!,
+  provider
+);
+```
+
+```typescript
+// oracle/src/shared/blockchain/contracts.ts
+
+import { ethers } from 'ethers';
+import { oracleWallet } from './client';
+import MarketFactoryABI from './abis/MarketFactory.json';
+import BinaryMarketABI from './abis/BinaryMarket.json';
+
+export const marketFactory = new ethers.Contract(
+  process.env.MARKET_FACTORY_ADDRESS!,
+  MarketFactoryABI,
+  oracleWallet
+);
+
+export function getMarketContract(address: string) {
+  return new ethers.Contract(address, BinaryMarketABI, oracleWallet);
+}
+
+export async function deployMarket(
+  question: string,
+  sourceUrl: string,
+  bettingClose: number,
+  resolution: number
+): Promise<string> {
+  const tx = await marketFactory.createMarket(
+    question,
+    sourceUrl,
+    bettingClose,
+    resolution
+  );
+  const receipt = await tx.wait();
+  return receipt.logs[0].args.market;
+}
+```
+
+#### 9.7.3 Notifications
+
+```typescript
+// oracle/src/shared/notifications/service.ts
+
 import axios from 'axios';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -2090,22 +2707,121 @@ export async function notifyAdmin(message: string) {
     });
   }
 
-  // Also log to database
   console.log('[ADMIN NOTIFICATION]', message);
 }
 ```
 
+#### 9.7.4 Configuration
+
+```typescript
+// oracle/src/shared/config/env.ts
+
+export const config = {
+  // Server
+  port: Number(process.env.PORT) || 3001,
+  frontendUrl: process.env.FRONTEND_URL!,
+  
+  // Blockchain
+  rpcUrl: process.env.RPC_URL!,
+  chainId: Number(process.env.CHAIN_ID) || 84532,
+  oraclePrivateKey: process.env.ORACLE_PRIVATE_KEY!,
+  
+  // Contracts
+  playTokenAddress: process.env.PLAY_TOKEN_ADDRESS!,
+  marketFactoryAddress: process.env.MARKET_FACTORY_ADDRESS!,
+  
+  // Services
+  dataServiceUrl: process.env.DATA_SERVICE_URL || 'http://localhost:8000',
+  
+  // Notifications
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+  telegramChatId: process.env.TELEGRAM_ADMIN_CHAT_ID,
+  discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL,
+} as const;
+```
+
+### 9.8 Oracle Entry Point
+
+```typescript
+// oracle/src/index.ts
+
+import { app } from './server';
+import { heart } from './orchestrator/heart';
+import { marketCreator } from './orchestrator/markets/creator';
+import { marketMonitor } from './orchestrator/markets/monitor';
+import { config } from './shared/config/env';
+import { dataServiceClient } from './orchestrator/dataServiceClient';
+
+async function main() {
+  // 1. Health checks before starting
+  const dataServiceHealthy = await dataServiceClient.healthCheck();
+  if (!dataServiceHealthy) {
+    console.warn('⚠️  Data Service not reachable. Orchestrator may fail.');
+  }
+
+  // 2. Start SERVER (User Input driver)
+  app.listen(config.port, () => {
+    console.log(`✓ Server listening on port ${config.port}`);
+  });
+
+  // 3. Register tick handlers and start ORCHESTRATOR (Passage of Time driver)
+  heart.register('marketCreator', marketCreator);
+  heart.register('marketMonitor', marketMonitor);
+  
+  heart.start(60_000); // Tick every 60 seconds
+  console.log('✓ Orchestrator heart started');
+
+  console.log('Oracle Service running');
+}
+
+main().catch((error) => {
+  console.error('Failed to start Oracle Service:', error);
+  process.exit(1);
+});
+```
+
+**Startup Flow:**
+
+```
+1. Check Data Service health (warn if unreachable)
+2. Start Express server (User Input driver)
+3. Register orchestrator handlers (creator, monitor)
+4. Start heart (Passage of Time driver)
+
+Both drivers now running:
+- Server responds to HTTP requests
+- Orchestrator ticks every 60 seconds
+  - creator.tick() runs every 24 hours
+  - monitor.tick() runs every 5 minutes
+```
+
 ### 9.9 Deliverables Checklist
 
-- [ ] Market Monitor service running
-- [ ] Result Fetcher with keyword matching
-- [ ] Settlement Executor with secure key management
-- [ ] Dispute detection and handling
-- [ ] 2-hour dispute window enforced
-- [ ] Admin API for manual resolution
-- [ ] Telegram/Discord notification bot
-- [ ] One market manually resolved via admin dashboard
-- [ ] Dispute flow tested end-to-end
+**Server Layer (User Input)**
+- [ ] Express app with security middleware (helmet, CORS, rate limiting)
+- [ ] Auth domain (Privy token verification)
+- [ ] Markets domain (list, detail, user bets)
+- [ ] Health check endpoint
+
+**Orchestrator Layer (Passage of Time)**
+- [ ] Heart (global tick mechanism)
+- [ ] Data Service Client (bridge to Python)
+- [ ] Market Creator (tick → Data Service → deploy → store)
+- [ ] Market Monitor (tick → check expirations → verify → propose)
+- [ ] Market Executor (propose resolution, finalize)
+- [ ] Dispute handler
+
+**Shared Layer**
+- [ ] Prisma client singleton
+- [ ] Blockchain client (ethers.js provider, wallet)
+- [ ] Contract helpers (deploy, getMarketContract)
+- [ ] Notification service (Telegram/Discord)
+- [ ] Typed environment config
+
+**Integration**
+- [ ] Entry point starts both drivers
+- [ ] One market created and resolved end-to-end
+- [ ] Service running on VPS via PM2
 
 ---
 
@@ -2346,63 +3062,233 @@ export async function getDailySponsorshipCost() {
 
 ---
 
-## Appendix A: Development Setup
+## Appendix A: Development & Deployment Setup
 
-### Local Development
+### Local Development (`scripts/dev-setup.sh`)
 
 ```bash
-# Clone repository
-git clone https://github.com/ospm/ospm.git
-cd ospm
+#!/bin/bash
+# scripts/dev-setup.sh - Local development setup
 
-# Install dependencies
+set -e
+
+echo "=== OSPM Local Development Setup ==="
+
+# 1. Check prerequisites
+command -v node >/dev/null 2>&1 || { echo "Node.js required"; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "Python 3 required"; exit 1; }
+command -v forge >/dev/null 2>&1 || { echo "Foundry required. Install: curl -L https://foundry.paradigm.xyz | bash"; exit 1; }
+
+# 2. Setup environment
+if [ ! -f .env ]; then
+  cp env.example .env
+  echo "Created .env from env.example - please fill in values"
+fi
+
+# 3. Install Oracle dependencies
+echo "Installing Oracle dependencies..."
+cd oracle
 npm install
+npx prisma generate
+cd ..
 
-# Setup environment
-cp env.example .env.local
+# 4. Install Data Service dependencies
+echo "Installing Data Service dependencies..."
+cd data-service
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+deactivate
+cd ..
 
-# Start database
-docker-compose up -d postgres
+# 5. Install contract dependencies
+echo "Installing contract dependencies..."
+cd contracts
+forge install
+cd ..
 
-# Run migrations
+# 6. Start PostgreSQL (assumes local installation)
+echo "Ensure PostgreSQL is running..."
+# On macOS: brew services start postgresql
+# On Ubuntu: sudo systemctl start postgresql
+
+# 7. Run database migrations
+echo "Running database migrations..."
+cd oracle
 npx prisma migrate dev
+cd ..
 
-# Start development server
-npm run dev
+# 8. Deploy contracts to local/testnet (optional)
+echo "To deploy contracts: cd contracts && forge script script/Deploy.s.sol --broadcast"
+
+echo "=== Setup Complete ==="
+echo "Start services:"
+echo "  Data Service: cd data-service && source venv/bin/activate && uvicorn main:app --reload"
+echo "  Oracle:       cd oracle && npm run dev"
+```
+
+### Staging Deployment (`scripts/deploy-staging.sh`)
+
+```bash
+#!/bin/bash
+# scripts/deploy-staging.sh - Staging deployment (run via GitHub Action)
+
+set -e
+
+echo "=== OSPM Staging Deployment ==="
+
+# 1. Pull latest code
+cd /home/ospm/ospm-services
+git pull origin main
+
+# 2. Install/update Oracle dependencies
+echo "Updating Oracle..."
+cd oracle
+npm ci --production
+npx prisma migrate deploy
+npx prisma generate
+cd ..
+
+# 3. Install/update Data Service dependencies
+echo "Updating Data Service..."
+cd data-service
+source venv/bin/activate
+pip install -r requirements.txt --quiet
+deactivate
+cd ..
+
+# 4. Build contracts (if changed)
+echo "Building contracts..."
+cd contracts
+forge build
+cd ..
+
+# 5. Restart services with PM2
+echo "Restarting services..."
+pm2 restart ecosystem.config.js --update-env
+
+# 6. Verify services are running
+sleep 5
+pm2 status
+
+echo "=== Deployment Complete ==="
+```
+
+### PM2 Ecosystem Config
+
+```javascript
+// ecosystem.config.js
+module.exports = {
+  apps: [
+    {
+      name: 'oracle',
+      cwd: './oracle',
+      script: 'npm',
+      args: 'start',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3001,
+      },
+    },
+    {
+      name: 'data-service',
+      cwd: './data-service',
+      script: './venv/bin/uvicorn',
+      args: 'main:app --host 0.0.0.0 --port 8000',
+      interpreter: 'none',
+    },
+  ],
+};
+```
+
+### GitHub Action (`.github/workflows/deploy-staging.yml`)
+
+```yaml
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/ospm/ospm-services
+            ./scripts/deploy-staging.sh
+```
+
+### nginx Configuration
+
+```nginx
+# /etc/nginx/sites-available/ospm
+server {
+    listen 80;
+    server_name api.yourdomain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name api.yourdomain.com;
+
+    ssl_certificate /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.yourdomain.com/privkey.pem;
+
+    # Oracle API
+    location /api {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Data Service (internal only, not exposed)
+    # Data Service runs on port 8000, accessed only by Oracle
+}
 ```
 
 ### Environment Variables Template
 
 ```env
-# .env.example
-
-# Auth (Privy)
-NEXT_PUBLIC_PRIVY_APP_ID=
-PRIVY_APP_SECRET=
+# env.example
 
 # Blockchain
-NEXT_PUBLIC_CHAIN_ID=84532
-NEXT_PUBLIC_RPC_URL=https://sepolia.base.org
-DEPLOYER_PRIVATE_KEY=
+CHAIN_ID=84532
+RPC_URL=https://sepolia.base.org
 ORACLE_PRIVATE_KEY=
 
 # Contracts (fill after deployment)
-NEXT_PUBLIC_PLAY_TOKEN_ADDRESS=
-NEXT_PUBLIC_MARKET_FACTORY_ADDRESS=
+PLAY_TOKEN_ADDRESS=
+MARKET_FACTORY_ADDRESS=
+
+# Database
+DATABASE_URL=postgresql://user:pass@localhost:5432/ospm
+
+# Data Service
+DATA_SERVICE_URL=http://localhost:8000
+OPENAI_API_KEY=
+
+# API
+PORT=3001
+FRONTEND_URL=https://yourdomain.com
+VPS_API_SECRET=your-secret-key-here
 
 # Paymaster (CDP)
-NEXT_PUBLIC_PAYMASTER_URL=
+PAYMASTER_URL=
 CDP_API_KEY=
 CDP_API_SECRET=
 CDP_SPONSORSHIP_POLICY_ID=
-
-# Backend
-DATABASE_URL=postgresql://user:pass@localhost:5432/ospm
-VPS_API_SECRET=your-secret-key-here
-NEXT_PUBLIC_VPS_API_URL=https://api.yourdomain.com
-
-# AI
-OPENAI_API_KEY=
 
 # Notifications
 TELEGRAM_BOT_TOKEN=
