@@ -1,96 +1,84 @@
-"use client";
-
-import { formatProbability } from "@/lib/lmsr";
+import type { Market } from "@/lib/api/types";
 
 interface MarketCardProps {
-  question: string;
-  pYes: number;
-  pNo: number;
-  qYes: number;
-  qNo: number;
-  totalTrades: number;
-  b: number;
+  market: Market;
 }
 
-export default function MarketCard({
-  question,
-  pYes,
-  pNo,
-  qYes,
-  qNo,
-  totalTrades,
-  b,
-}: MarketCardProps) {
-  const yesPercent = pYes * 100;
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
+function getStatusColor(status: string): string {
+  switch (status) {
+    case "active":
+      return "text-[var(--yes-color)]";
+    case "pending":
+      return "text-[var(--accent)]";
+    case "resolved":
+      return "text-muted";
+    default:
+      return "text-muted";
+  }
+}
+
+export default function MarketCard({ market }: MarketCardProps) {
   return (
     <div className="card animate-fade-in-up">
+      {/* Category & Status */}
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted bg-[var(--foreground)]/5 px-2 py-1 rounded">
+          {market.category}
+        </span>
+        <span className={`text-xs font-medium uppercase tracking-wider ${getStatusColor(market.status)}`}>
+          {market.status}
+        </span>
+      </div>
+
       {/* Question */}
-      <div className="mb-6">
-        <div className="text-xs font-medium uppercase tracking-wider text-muted mb-2">
-          The Question
-        </div>
-        <h2 className="text-xl md:text-2xl font-semibold leading-tight">
-          {question}
-        </h2>
-      </div>
+      <h3 className="text-lg font-semibold leading-tight mb-3">
+        {market.question}
+      </h3>
 
-      {/* Probability Display */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="text-center p-5 rounded-xl bg-[var(--yes-color)]/5 border border-[var(--yes-color)]/20">
-          <div className="price-display price-yes">
-            {formatProbability(pYes)}
-          </div>
-          <div className="text-sm text-muted mt-2 font-medium">
-            Yes
-          </div>
-          <div className="text-xs text-muted mt-1 font-mono">
-            {qYes.toFixed(1)} shares
-          </div>
-        </div>
-        <div className="text-center p-5 rounded-xl bg-[var(--no-color)]/5 border border-[var(--no-color)]/20">
-          <div className="price-display price-no">
-            {formatProbability(pNo)}
-          </div>
-          <div className="text-sm text-muted mt-2 font-medium">
-            No
-          </div>
-          <div className="text-xs text-muted mt-1 font-mono">
-            {qNo.toFixed(1)} shares
-          </div>
-        </div>
-      </div>
+      {/* Description */}
+      {market.description && (
+        <p className="text-sm text-muted mb-4 line-clamp-2">
+          {market.description}
+        </p>
+      )}
 
-      {/* Probability Bar */}
-      <div className="mb-6">
-        <div className="probability-bar h-3">
-          <div
-            className="probability-bar-fill probability-bar-yes transition-all duration-500"
-            style={{ width: `${yesPercent}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-xs text-muted mt-2">
-          <span>0%</span>
-          <span className="text-[var(--accent)]">Market Probability</span>
-          <span>100%</span>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 pt-5 border-t border-[var(--border-color)]">
+      {/* Dates */}
+      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[var(--border-color)]">
         <div>
           <div className="text-xs text-muted font-medium uppercase tracking-wider">
-            Total Trades
+            Betting Closes
           </div>
-          <div className="text-xl font-semibold text-[var(--accent)] mt-1">{totalTrades.toLocaleString()}</div>
+          <div className="text-sm font-medium mt-1">
+            {formatDate(market.bettingClosesAt)}
+          </div>
         </div>
         <div>
           <div className="text-xs text-muted font-medium uppercase tracking-wider">
-            Liquidity (b)
+            Resolves
           </div>
-          <div className="text-xl font-semibold mt-1">{b}</div>
+          <div className="text-sm font-medium mt-1">
+            {formatDate(market.resolvesAt)}
+          </div>
         </div>
       </div>
+
+      {/* Source Link */}
+      <a
+        href={market.sourceUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-4 text-xs text-[var(--accent)] hover:underline inline-flex items-center gap-1"
+      >
+        View Source →
+      </a>
     </div>
   );
 }

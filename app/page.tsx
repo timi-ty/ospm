@@ -1,150 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import Image from "next/image";
-import useSWR from "swr";
+import { useMarkets } from "@/lib/api/hooks";
 import MarketCard from "@/components/MarketCard";
-import TradePanel from "@/components/TradePanel";
-import AlreadyTraded from "@/components/AlreadyTraded";
-import PriceChart from "@/components/PriceChart";
-import TradeHistory from "@/components/TradeHistory";
-
-interface Trade {
-  id: string;
-  visitorId: string;
-  side: string;
-  amountSpent: number;
-  sharesGot: number;
-  priceBefore: number;
-  priceAfter: number;
-  createdAt: string;
-}
-
-interface Market {
-  id: string;
-  question: string;
-  b: number;
-  qYes: number;
-  qNo: number;
-  pYes: number;
-  pNo: number;
-}
-
-interface MarketData {
-  market: Market;
-  trades: Trade[];
-  totalTrades: number;
-}
-
-interface TradeStatus {
-  hasTraded: boolean;
-  trade: Trade | null;
-}
-
-const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then((res) => res.json());
 
 export default function Home() {
-  const [isTrading, setIsTrading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Fetch market data with polling every 2 seconds
-  const {
-    data: marketData,
-    error: marketError,
-    mutate: mutateMarket,
-  } = useSWR<MarketData>("/api/market", fetcher, {
-    refreshInterval: 2000,
-    revalidateOnFocus: true,
-  });
-
-  // Fetch trade status (has user already traded?)
-  const {
-    data: tradeStatus,
-    mutate: mutateTradeStatus,
-  } = useSWR<TradeStatus>("/api/trade", fetcher);
-
-  const handleTrade = async (side: "YES" | "NO", amount: number) => {
-    setIsTrading(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/trade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ side, amount }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Trade failed");
-        return;
-      }
-
-      // Refresh both market data and trade status
-      await Promise.all([mutateMarket(), mutateTradeStatus()]);
-    } catch (err) {
-      setError("Network error. Please try again.");
-      console.error("Trade error:", err);
-    } finally {
-      setIsTrading(false);
-    }
-  };
-
-  // Show loading state
-  if (!marketData && !marketError) {
-    return (
-      <main className="min-h-screen p-4 md:p-8 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-pulse-glow inline-block p-4 rounded-2xl bg-white/80 mb-4 shadow-sm">
-            <svg
-              className="w-10 h-10 text-[var(--accent)] animate-spin"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold">Loading Market...</h2>
-        </div>
-      </main>
-    );
-  }
-
-  // Show error state
-  if (marketError || !marketData?.market) {
-    return (
-      <main className="min-h-screen p-4 md:p-8 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <div className="text-5xl mb-4">⚠️</div>
-          <h2 className="text-xl font-semibold mb-4">Market Not Found</h2>
-          <p className="text-muted mb-6">
-            The prediction market hasn&apos;t been set up yet. Please run the database
-            seed script.
-          </p>
-          <code className="block p-4 bg-white rounded-xl text-sm text-[var(--accent)] border border-[var(--border-color)]">
-            npm run db:seed
-          </code>
-        </div>
-      </main>
-    );
-  }
-
-  const { market, trades, totalTrades } = marketData;
-  const hasTraded = tradeStatus?.hasTraded ?? false;
-  const userTrade = tradeStatus?.trade ?? null;
+  const { data, error, isLoading } = useMarkets();
 
   return (
     <main className="min-h-screen">
@@ -160,14 +21,18 @@ export default function Home() {
               className="rounded-md"
               priority
             />
-            <span className="font-bold tracking-tight text-lg hidden sm:block">OSPM</span>
+            <span className="font-bold tracking-tight text-lg hidden sm:block">
+              OSPM
+            </span>
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--foreground)]/5 border border-[var(--foreground)]/10">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--yes-color)] opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--yes-color)]"></span>
             </span>
-            <span className="text-xs font-medium text-muted uppercase tracking-wider">Play Money Only</span>
+            <span className="text-xs font-medium text-muted uppercase tracking-wider">
+              Live
+            </span>
           </div>
         </div>
       </nav>
@@ -179,100 +44,128 @@ export default function Home() {
             Why This Exists
           </h2>
           <h1 className="text-2xl md:text-4xl font-medium leading-tight mb-8 text-foreground/90">
-            Prediction markets will have a <span className="text-foreground decoration-2 decoration-[var(--accent)]/30 underline underline-offset-2">profound feedback effect</span> on decision making — similar to how the stock market influences public companies.
+            Prediction markets will have a{" "}
+            <span className="text-foreground decoration-2 decoration-[var(--accent)]/30 underline underline-offset-2">
+              profound feedback effect
+            </span>{" "}
+            on decision making — similar to how the stock market influences
+            public companies.
           </h1>
           <p className="text-lg md:text-xl text-muted leading-relaxed max-w-2xl">
-            Leading prediction markets must be <span className="text-[var(--accent)] font-medium">open source</span> to truly democratize the tools that shape our future decisions. This is an experiment in that transparency.
+            Leading prediction markets must be{" "}
+            <span className="text-[var(--accent)] font-medium">open source</span>{" "}
+            to truly democratize the tools that shape our future decisions. This
+            is an experiment in that transparency.
           </p>
           <div className="mt-8 p-4 bg-[var(--accent)]/10 border border-[var(--accent)]/20 rounded-xl inline-block text-left w-full sm:w-auto">
-             <div className="flex items-start gap-3">
-               <span className="text-xl shrink-0 leading-none mt-0.5">✨</span>
-               <p className="text-sm text-[var(--foreground)] font-medium leading-snug">
-                 Use play money to test the waters. Stake as much as you want.
-               </p>
-             </div>
-          </div>
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="mb-8 p-4 rounded-xl bg-[var(--no-color)]/10 border border-[var(--no-color)]/20 text-center">
-            <p className="text-[var(--no-color)] font-medium">{error}</p>
-          </div>
-        )}
-
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Market Info */}
-          <div className="lg:col-span-2 space-y-6">
-            <MarketCard
-              question={market.question}
-              pYes={market.pYes}
-              pNo={market.pNo}
-              qYes={market.qYes}
-              qNo={market.qNo}
-              totalTrades={totalTrades}
-              b={market.b}
-            />
-
-            <PriceChart trades={trades} currentPYes={market.pYes} />
-
-            <TradeHistory trades={trades} />
-          </div>
-
-          {/* Right Column - Trade Panel */}
-          <div className="space-y-6">
-            {hasTraded && userTrade ? (
-              <AlreadyTraded trade={userTrade} />
-            ) : (
-              <TradePanel
-                qYes={market.qYes}
-                qNo={market.qNo}
-                b={market.b}
-                pYes={market.pYes}
-                pNo={market.pNo}
-                onTrade={handleTrade}
-                isLoading={isTrading}
-              />
-            )}
-
-            {/* How It Works Link */}
-            <div className="card">
-              <h3 className="text-lg font-semibold mb-3">How It Works</h3>
-              <p className="text-sm text-muted mb-4">
-                This market uses <span className="text-[var(--accent)] font-medium">LMSR</span>{" "}
-                (Logarithmic Market Scoring Rule) for automated pricing. The
-                price represents the market&apos;s collective probability estimate.
+            <div className="flex items-start gap-3">
+              <span className="text-xl shrink-0 leading-none mt-0.5">✨</span>
+              <p className="text-sm text-[var(--foreground)] font-medium leading-snug">
+                Markets are AI-generated from real-world news sources,
+                identifying upcoming events worth predicting.
               </p>
-              <ul className="text-sm text-muted space-y-2">
-                <li className="flex items-start gap-2">
-                  <span className="text-[var(--yes-color)]">→</span>
-                  Buy YES if you think OSPM will hit 1M trades
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-[var(--no-color)]">→</span>
-                  Buy NO if you think it won&apos;t happen
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-[var(--accent)]">→</span>
-                  Your bet moves the price based on LMSR math
-                </li>
-              </ul>
-              <a
-                href="/how-it-works"
-                className="btn btn-outline w-full mt-4 text-sm"
-              >
-                Learn More About LMSR
-              </a>
             </div>
           </div>
         </div>
 
+        {/* Loading State */}
+        {isLoading && (
+          <div className="text-center py-20">
+            <div className="animate-pulse-glow inline-block p-4 rounded-2xl bg-white/80 mb-4 shadow-sm">
+              <svg
+                className="w-10 h-10 text-[var(--accent)] animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold">Loading Markets...</h2>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <div className="text-center py-20 max-w-md mx-auto">
+            <div className="text-5xl mb-4">⚠️</div>
+            <h2 className="text-xl font-semibold mb-4">
+              Failed to Load Markets
+            </h2>
+            <p className="text-muted mb-6">
+              Could not connect to the Oracle service. Make sure it&apos;s
+              running on port 3001.
+            </p>
+            <code className="block p-4 bg-white rounded-xl text-sm text-[var(--accent)] border border-[var(--border-color)]">
+              cd oracle && npm run dev
+            </code>
+          </div>
+        )}
+
+        {/* Markets Grid */}
+        {data && (
+          <>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold">
+                {data.total} Market{data.total !== 1 ? "s" : ""}
+              </h2>
+            </div>
+
+            {data.markets.length === 0 ? (
+              <div className="text-center py-20">
+                <div className="text-5xl mb-4">📭</div>
+                <h2 className="text-xl font-semibold mb-2">No Markets Yet</h2>
+                <p className="text-muted">
+                  Markets will appear here once the Data Service generates them.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {data.markets.map((market) => (
+                  <MarketCard key={market.id} market={market} />
+                ))}
+              </div>
+            )}
+
+            {data.hasMore && (
+              <div className="text-center mt-8">
+                <button className="btn btn-outline">Load More</button>
+              </div>
+            )}
+          </>
+        )}
+
         {/* Footer */}
         <footer className="mt-20 pt-8 border-t border-[var(--border-color)] text-center pb-8">
           <p className="text-sm text-muted">
-            Built with Next.js, Prisma, and LMSR ·{" "}
-            <span className="text-[var(--accent)]">Play money only</span>
+            <a
+              href="https://github.com/timi-ty/ospm-frontend"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[var(--accent)] transition-colors"
+            >
+              Built with Next.js
+            </a>
+            {" · "}
+            <a
+              href="https://github.com/timi-ty/ospm-services"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[var(--accent)] transition-colors"
+            >
+              Powered by Oracle Service
+            </a>
           </p>
         </footer>
       </div>
